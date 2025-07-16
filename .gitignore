@@ -1,0 +1,130 @@
+# =============================================================================
+# Archivos de Sistema Operativo y Editores
+# =============================================================================
+# Ignorar archivos específicos de macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Ignorar archivos de "thumnails" de Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+# Ignorar archivos de editores
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-workspace
+
+# = a- vim
+*.swp
+*.swo
+
+
+# =============================================================================
+# Archivos de Proyecto General
+# =============================================================================
+# Archivos de variables de entorno locales. ¡NUNCA deben subirse a Git!
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Archivos de log
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Archivos de reportes de errores
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Archivos de caché y dependencias
+node_modules/
+.npm
+.pnp.*
+
+
+# =============================================================================
+# Terraform
+# =============================================================================
+# Archivos de estado locales (aunque usamos backend remoto, es buena práctica ignorarlos)
+*.tfstate
+*.tfstate.*.backup
+
+# Archivos de "crash log" de Terraform
+crash.log
+crash.*.log
+
+# Archivos de caché y configuración local de Terraform
+# ¡NUNCA ignorar el .terraform.lock.hcl!
+.terraform/
+
+# Archivos de plan de Terraform. Pueden contener información sensible.
+*.tfplan
+
+# Archivos generados por 'terraform providers mirror'
+.terraform.d/
+
+# Variables de Terraform que no deben ser compartidas
+*.tfvars
+*.tfvars.json
+
+# Archivos de override
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+
+# =============================================================================
+# Serverless Framework
+# =============================================================================
+# Artefactos y caché del Serverless Framework
+.serverless/
+.sls-next-build/
+
+
+# =============================================================================
+# Frontend (Vue.js / Vite)
+# =============================================================================
+# Directorio de salida de la compilación
+dist/
+dist-ssr/
+/dist/
+
+# Archivos de caché de Vite y otros
+.vite/
+.output/
+.nuxt/
+.nitro/
+
+# Cobertura de tests
+coverage/
+.nyc_output/
+
+
+# =============================================================================
+# Archivos de Test
+# =============================================================================
+# Archivos de configuración de tests locales
+/cypress.config.ts
+/cypress.config.js
+/cypress.config.mjs
+/cypress/videos/
+/cypress/screenshots/
+
+# Archivos de configuración de Playwright
+/playwright.config.ts
+/playwright.config.js
+/playwright-report/
+/test-results/
+infra/.terraform.lock.hcl

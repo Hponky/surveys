@@ -1,0 +1,36 @@
+# serverless.yml
+
+service: survey-api
+
+frameworkVersion: '4.17.1' 
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  
+  # Permisos para que Lambda acceda a DynamoDB
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "dynamodb:PutItem"
+            - "dynamodb:GetItem"
+          Resource: "arn:aws:dynamodb:us-east-1:407493720232:table/SurveyPlatform"
+
+# Definición de nuestras funciones
+functions:
+  createSurvey:
+    handler: src/functions/surveys.create
+    events:
+      - httpApi:
+          path: /surveys
+          method: post
+
+  addQuestion:
+    handler: src/functions/surveys.addQuestion
+    events:
+      - httpApi:
+          path: /surveys/{surveyId}/questions
+          method: post
