@@ -23,7 +23,7 @@ jest.mock('../../src/shared/dynamo-service', () => {
 
 // Importar las funciones de surveys DESPUÉS de que el mock esté configurado
 // Esto asegura que la instancia de DynamoServiceImpl dentro de surveys.ts sea la mockeada
-const { create, addQuestion, getSurvey } = require('../../src/functions/surveys');
+const { create, addQuestion, getSurvey, submitResponse } = require('../../src/functions/surveys');
 
 describe('Surveys API', () => {
   const mockTableName = 'SurveyPlatform';
@@ -67,7 +67,7 @@ describe('Surveys API', () => {
       const result = await create(event);
       
       expect(result.statusCode).toBe(400);
-      expect(JSON.parse(result.body).message).toContain('Validation error: "title" is required');
+      expect(JSON.parse(result.body).message).toContain('"title" is required');
     });
   });
 
@@ -106,7 +106,7 @@ describe('Surveys API', () => {
 
       const result = await addQuestion(event);
       
-      expect(JSON.parse(result.body).message).toContain('Validation error: "type" must be one of [FREE_TEXT, MULTIPLE_CHOICE]');
+      expect(JSON.parse(result.body).message).toContain('"type" must be one of [FREE_TEXT, MULTIPLE_CHOICE]');
       expect(result.statusCode).toBe(400);
     });
   });
@@ -164,7 +164,105 @@ describe('Surveys API', () => {
       const result = await getSurvey(event);
       
       expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toContain('"surveyId" is required');
+    });
+  });
+
+  describe('submitResponse', () => {
+    it('should submit a survey response successfully', async () => {
+      const event = {
+        pathParameters: { surveyId: mockSurveyId },
+        body: JSON.stringify({
+          responses: [
+            { questionId: mockQuestionId, answer: 'Test Answer' },
+            { questionId: randomUUID(), answer: ['Option A', 'Option B'] }
+          ]
+        })
+      } as unknown as APIGatewayProxyEvent;
+  
+      const result = await submitResponse(event);
+  
+      expect(result.statusCode).toBe(201);
+      expect(JSON.parse(result.body).message).toBe('Response submitted successfully');
+      expect(mockPut).toHaveBeenCalledTimes(2); // Two put operations for two responses
+      expect(mockPut).toHaveBeenCalledWith(expect.objectContaining({
+        PK: expect.stringContaining('RESPONSE#'),
+        SK: `ANSWER#${mockQuestionId}`,
+        surveyId: mockSurveyId,
+        answer: 'Test Answer',
+        createdAt: expect.any(String)
+      }));
+      expect(mockPut).toHaveBeenCalledWith(expect.objectContaining({
+        PK: expect.stringContaining('RESPONSE#'),
+        SK: expect.stringContaining('ANSWER#'),
+        surveyId: mockSurveyId,
+        answer: ['Option A', 'Option B'],
+        createdAt: expect.any(String)
+      }));
+    });
+  
+    it('should return 400 if surveyId is missing from path parameters', async () => {
+      const event = {
+        pathParameters: {}, // Missing surveyId
+        body: JSON.stringify({
+          responses: [{ questionId: mockQuestionId, answer: 'Test Answer' }]
+        })
+      } as unknown as APIGatewayProxyEvent;
+  
+      const result = await submitResponse(event);
+  
+      expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).message).toContain('Validation error: "surveyId" is required');
+    });
+  
+    it('should return 400 if request body is invalid (e.g., responses is empty)', async () => {
+      const event = {
+        pathParameters: { surveyId: mockSurveyId },
+        body: JSON.stringify({
+          responses: [] // Empty responses array
+        })
+      } as unknown as APIGatewayProxyEvent;
+  
+      const result = await submitResponse(event);
+  
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toContain('"responses" must contain at least 1 items');
+    });
+  
+    it('should return 400 if a questionId is missing in a response', async () => {
+      const event = {
+        pathParameters: { surveyId: mockSurveyId },
+        body: JSON.stringify({
+          responses: [{ answer: 'Test Answer' }] // Missing questionId
+        })
+      } as unknown as APIGatewayProxyEvent;
+  
+      const result = await submitResponse(event);
+  
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toContain('"responses[0].questionId" is required');
+    });
+  
+    it('should handle multiple choice answers correctly', async () => {
+      const event = {
+        pathParameters: { surveyId: mockSurveyId },
+        body: JSON.stringify({
+          responses: [
+            { questionId: mockQuestionId, answer: ['Option X', 'Option Y'] }
+          ]
+        })
+      } as unknown as APIGatewayProxyEvent;
+  
+      const result = await submitResponse(event);
+  
+      expect(result.statusCode).toBe(201);
+      expect(mockPut).toHaveBeenCalledWith(expect.objectContaining({
+        PK: expect.stringContaining('RESPONSE#'),
+        SK: `ANSWER#${mockQuestionId}`,
+        surveyId: mockSurveyId,
+        answer: ['Option X', 'Option Y'],
+        createdAt: expect.any(String)
+      }));
     });
   });
 });

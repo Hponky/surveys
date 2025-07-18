@@ -42,6 +42,19 @@ interface SurveyResponse {
   }[];
 }
 
+interface Answer {
+  PK: string;
+  SK: string;
+  surveyId: string;
+  answer: string | string[]; // Puede ser un string o un array si permitimos selección múltiple
+  createdAt: string;
+}
+
+interface ResponseInput {
+  questionId: string;
+  answer: string | string[];
+}
+
 // Esquemas de validación
 const pathParamsSchema = Joi.object({
   surveyId: Joi.string().uuid().required()
@@ -74,16 +87,33 @@ const querySchema = Joi.object({
   ExpressionAttributeValues: Joi.object().required()
 });
 
+const submitResponseSchema = Joi.object({
+  responses: Joi.array().items(
+    Joi.object({
+      questionId: Joi.string().uuid().required(),
+      answer: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).required()
+    })
+  ).min(1).required()
+});
+
+const answerSchema = Joi.object({
+    PK: Joi.string().pattern(/^RESPONSE#/).required(),
+    SK: Joi.string().pattern(/^ANSWER#/).required(),
+    surveyId: Joi.string().uuid().required(),
+    answer: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).required(),
+    createdAt: Joi.string().isoDate().required(),
+});
+
 // Inicialización de servicios
 const surveyService = new DynamoServiceImpl(
   process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  surveySchema, // Esquema para encuestas
+  surveySchema,
   querySchema
 );
 
 const questionService = new DynamoServiceImpl(
   process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  questionSchema, // Esquema para preguntas
+  questionSchema,
   querySchema
 );
 
@@ -91,6 +121,12 @@ const createSurveySchema = Joi.object({
   title: Joi.string().required(),
   description: Joi.string().required()
 });
+
+const answerService = new DynamoServiceImpl(
+  process.env.SURVEYS_TABLE || 'SurveyPlatform',
+  answerSchema, 
+  querySchema
+);
 
 export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
@@ -256,6 +292,55 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
       statusCode: error.statusCode || HTTP_STATUS.INTERNAL_ERROR,
       body: JSON.stringify({
         message: error.message || "Error fetching survey"
+      }),
+    };
+  }
+};
+
+export const submitResponse = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  try {
+    // 1. Validar el surveyId de la URL
+    const { surveyId } = await pathParamsSchema.validateAsync(event.pathParameters || {});
+    
+    // 2. Validar el cuerpo de la petición
+    const { responses } = await submitResponseSchema.validateAsync(
+      JSON.parse(event.body || '{}')
+    );
+
+    const responseId = randomUUID();
+    const createdAt = new Date().toISOString();
+
+    // 3. Crear una promesa para cada operación de escritura en DynamoDB
+    const putPromises = responses.map((res: ResponseInput) => {
+      const answerItem: Answer = {
+        PK: `RESPONSE#${responseId}`,
+        SK: `ANSWER#${res.questionId}`,
+        surveyId,
+        answer: res.answer,
+        createdAt,
+      };
+      return answerService.put(answerItem);
+    });
+
+    // 4. Ejecutar todas las promesas en paralelo para mayor eficiencia
+    await Promise.all(putPromises);
+
+    return {
+      statusCode: HTTP_STATUS.CREATED,
+      body: JSON.stringify({
+        message: "Response submitted successfully",
+        responseId,
+      }),
+    };
+
+  } catch (error) {
+    console.error(error);
+    return {
+      statusCode: error instanceof Joi.ValidationError ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_ERROR,
+      body: JSON.stringify({
+        message: error instanceof Joi.ValidationError
+          ? `Validation error: ${error.message}`
+          : "Error submitting response"
       }),
     };
   }

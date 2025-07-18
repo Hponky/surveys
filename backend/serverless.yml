@@ -65,3 +65,10 @@ functions:
       - httpApi:
           path: /surveys/{surveyId} # El mismo path que el de arriba, pero con método GET
           method: get
+
+  submitResponse:
+    handler: src/functions/surveys.submitResponse
+    events:
+      - httpApi:
+          path: /surveys/{surveyId}/responses
+          method: post
