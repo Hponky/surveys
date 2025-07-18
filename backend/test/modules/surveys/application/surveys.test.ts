@@ -8,7 +8,7 @@ const mockUpdate = jest.fn(); // Añadir si se planean tests para update
 const mockDelete = jest.fn(); // Añadir si se planean tests para delete
 
 // Mockear la clase DynamoServiceImpl ANTES de importar el módulo surveys
-jest.mock('../../src/shared/dynamo-service', () => {
+jest.mock('@/shared/dynamo-service', () => {
   return {
     DynamoServiceImpl: jest.fn().mockImplementation(() => {
       return {
@@ -23,7 +23,7 @@ jest.mock('../../src/shared/dynamo-service', () => {
 
 // Importar las funciones de surveys DESPUÉS de que el mock esté configurado
 // Esto asegura que la instancia de DynamoServiceImpl dentro de surveys.ts sea la mockeada
-const { create, addQuestion, getSurvey, submitResponse } = require('../../src/functions/surveys');
+const { create, addQuestion, getSurvey, submitResponse } = require('@/modules/surveys/application/surveys');
 
 describe('Surveys API', () => {
   const mockTableName = 'SurveyPlatform';

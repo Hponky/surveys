@@ -1,132 +1,10 @@
-import { DynamoServiceImpl } from '../shared/dynamo-service';
 import Joi from 'joi';
 import { randomUUID } from "crypto";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-
-// Códigos de estado HTTP
-const HTTP_STATUS = {
-  OK: 200,
-  CREATED: 201,
-  BAD_REQUEST: 400,
-  NOT_FOUND: 404,
-  INTERNAL_ERROR: 500
-};
-
-// Interfaces para tipos
-interface Survey {
-  PK: string;
-  SK: string;
-  title: string;
-  description: string;
-  status: 'CREATED' | 'PUBLISHED' | 'CLOSED';
-  createdAt: string;
-}
-
-interface Question {
-  PK: string;
-  SK: string;
-  text: string;
-  type: 'FREE_TEXT' | 'MULTIPLE_CHOICE';
-  options?: string[];
-}
-
-interface SurveyResponse {
-  surveyId: string;
-  title: string;
-  description: string;
-  questions: {
-    questionId: string;
-    text: string;
-    type: 'FREE_TEXT' | 'MULTIPLE_CHOICE';
-    options?: string[];
-  }[];
-}
-
-interface Answer {
-  PK: string;
-  SK: string;
-  surveyId: string;
-  answer: string | string[]; // Puede ser un string o un array si permitimos selección múltiple
-  createdAt: string;
-}
-
-interface ResponseInput {
-  questionId: string;
-  answer: string | string[];
-}
-
-// Esquemas de validación
-const pathParamsSchema = Joi.object({
-  surveyId: Joi.string().uuid().required()
-});
-
-const surveySchema = Joi.object({
-  PK: Joi.string().pattern(/^SURVEY#/).required(),
-  SK: Joi.string().valid('METADATA').required(),
-  title: Joi.string().required(),
-  description: Joi.string().required(),
-  status: Joi.string().valid('CREATED', 'PUBLISHED', 'CLOSED').required(),
-  createdAt: Joi.string().isoDate().required()
-});
-
-const questionSchema = Joi.object({
-  PK: Joi.string().pattern(/^SURVEY#/).required(),
-  SK: Joi.string().pattern(/^QUESTION#/).required(),
-  text: Joi.string().required(),
-  type: Joi.string().valid('FREE_TEXT', 'MULTIPLE_CHOICE').required(),
-  options: Joi.when('type', {
-    is: 'MULTIPLE_CHOICE',
-    then: Joi.array().items(Joi.string()).min(2).required(),
-    otherwise: Joi.forbidden()
-  })
-});
-
-const querySchema = Joi.object({
-  TableName: Joi.string().required(),
-  KeyConditionExpression: Joi.string().required(),
-  ExpressionAttributeValues: Joi.object().required()
-});
-
-const submitResponseSchema = Joi.object({
-  responses: Joi.array().items(
-    Joi.object({
-      questionId: Joi.string().uuid().required(),
-      answer: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).required()
-    })
-  ).min(1).required()
-});
-
-const answerSchema = Joi.object({
-    PK: Joi.string().pattern(/^RESPONSE#/).required(),
-    SK: Joi.string().pattern(/^ANSWER#/).required(),
-    surveyId: Joi.string().uuid().required(),
-    answer: Joi.alternatives().try(Joi.string(), Joi.array().items(Joi.string())).required(),
-    createdAt: Joi.string().isoDate().required(),
-});
-
-// Inicialización de servicios
-const surveyService = new DynamoServiceImpl(
-  process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  surveySchema,
-  querySchema
-);
-
-const questionService = new DynamoServiceImpl(
-  process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  questionSchema,
-  querySchema
-);
-
-const createSurveySchema = Joi.object({
-  title: Joi.string().required(),
-  description: Joi.string().required()
-});
-
-const answerService = new DynamoServiceImpl(
-  process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  answerSchema, 
-  querySchema
-);
+import { Survey, Question, SurveyResponse, Answer, ResponseInput } from '../domain/interfaces';
+import { pathParamsSchema, createSurveySchema, questionInputSchema, submitResponseSchema } from '../infrastructure/schemas';
+import { HTTP_STATUS } from '../utils/constants';
+import { surveyService, questionService, answerService } from '../infrastructure/services';
 
 export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
@@ -173,15 +51,6 @@ export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
   }
 };
 
-const questionInputSchema = Joi.object({
-  text: Joi.string().required(),
-  type: Joi.string().valid('FREE_TEXT', 'MULTIPLE_CHOICE').required(),
-  options: Joi.when('type', {
-    is: 'MULTIPLE_CHOICE',
-    then: Joi.array().items(Joi.string()).min(2).required(),
-    otherwise: Joi.forbidden()
-  })
-});
 
 export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
