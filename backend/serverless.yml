@@ -22,6 +22,7 @@ provider:
             - "dynamodb:UpdateItem"
             - "dynamodb:DeleteItem"
             - "dynamodb:Query"
+            - "dynamodb:Scan"
           Resource:
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:provider.environment.SURVEYS_TABLE}"
 
@@ -46,28 +47,35 @@ resources:
 # Definición de nuestras funciones
 functions:
   createSurvey:
-    handler: src/functions/surveys.create
+    handler: src/modules/surveys/application/surveys.create
     events:
       - httpApi:
           path: /surveys
           method: post
 
   addQuestion:
-    handler: src/functions/surveys.addQuestion
+    handler: src/modules/surveys/application/surveys.addQuestion
     events:
       - httpApi:
           path: /surveys/{surveyId}/questions
           method: post
 
-  getSurvey:
-    handler: src/functions/surveys.getSurvey # Apunta a la nueva función
+  getAllSurveys:
+    handler: src/modules/surveys/application/surveys.getAllSurveys
     events:
       - httpApi:
-          path: /surveys/{surveyId} # El mismo path que el de arriba, pero con método GET
+          path: /surveys
+          method: get
+
+  getSurvey:
+    handler: src/modules/surveys/application/surveys.getSurvey
+    events:
+      - httpApi:
+          path: /surveys/{surveyId}
           method: get
 
   submitResponse:
-    handler: src/functions/surveys.submitResponse
+    handler: src/modules/surveys/application/surveys.submitResponse
     events:
       - httpApi:
           path: /surveys/{surveyId}/responses

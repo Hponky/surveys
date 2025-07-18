@@ -51,6 +51,14 @@ export interface DynamoService<T, ID = string> {
    * @throws DynamoDBError si falla la operación
    */
   query(queryParams: DynamoDB.DocumentClient.QueryInput): Promise<T[]>;
+
+  /**
+   * Escanea elementos en la tabla usando condiciones de filtro
+   * @param scanParams - Parámetros de escaneo DynamoDB
+   * @returns Promise con los resultados del escaneo
+   * @throws DynamoDBError si falla la operación
+   */
+  scan(scanParams: DynamoDB.DocumentClient.ScanInput): Promise<T[]>;
 }
 
 /**
@@ -169,6 +177,20 @@ export class DynamoServiceImpl<T extends PutItemInputAttributeMap> implements Dy
       
     await this.validateInput(params, this.querySchema);
     const result = await this.dynamoDb.query(params).promise();
+    return result.Items as T[] || [];
+  }
+
+  async scan(scanParams: DynamoDB.DocumentClient.ScanInput): Promise<T[]> {
+    const params = {
+      ...scanParams,
+      TableName: this.tableName
+    };
+
+    // Validar que TableName coincida con el configurado
+    await this.validateInput({TableName: params.TableName},
+      Joi.object({TableName: Joi.string().valid(this.tableName).required()}));
+
+    const result = await this.dynamoDb.scan(params).promise();
     return result.Items as T[] || [];
   }
 }

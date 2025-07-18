@@ -42,10 +42,10 @@ export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     console.error(error);
     return {
       statusCode: error instanceof Joi.ValidationError ? 400 : 500,
-      body: JSON.stringify({ 
-        message: error instanceof Joi.ValidationError 
+      body: JSON.stringify({
+        message: error instanceof Joi.ValidationError
           ? `Validation error: ${error.message}`
-          : "Error creating survey" 
+          : "Error creating survey"
       }),
     };
   }
@@ -97,6 +97,51 @@ export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatew
           ? `Validation error: ${error.message}`
           : "Error processing request"
       }),
+    };
+  }
+};
+
+export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  try {
+    const scanParams = {
+      TableName: process.env.SURVEYS_TABLE || 'SurveyPlatform',
+      FilterExpression: "SK = :sk",
+      ExpressionAttributeValues: {
+        ":sk": "METADATA",
+      },
+      ProjectionExpression: "PK, title, createdAt, #st",
+      ExpressionAttributeNames: {
+          "#st": "status"
+      }
+    };
+
+    const Items = await surveyService.scan(scanParams);
+
+    if (!Items || Items.length === 0) {
+        return {
+            statusCode: HTTP_STATUS.OK,
+            body: JSON.stringify([])
+        };
+    }
+
+    const surveys = Items.map((item: any) => ({
+        surveyId: item.PK.replace("SURVEY#", ""),
+        title: item.title,
+        createdAt: item.createdAt,
+        status: item.status
+    }));
+
+    return {
+      statusCode: HTTP_STATUS.OK,
+      body: JSON.stringify(surveys),
+    };
+
+  } catch (error) {
+    console.error("Error fetching surveys:", error);
+
+    return {
+      statusCode: HTTP_STATUS.INTERNAL_ERROR,
+      body: JSON.stringify({ message: "An error occurred while fetching the surveys." }),
     };
   }
 };
