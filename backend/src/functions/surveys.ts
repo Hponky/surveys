@@ -74,10 +74,16 @@ const querySchema = Joi.object({
   ExpressionAttributeValues: Joi.object().required()
 });
 
-// Inicialización del servicio
+// Inicialización de servicios
 const surveyService = new DynamoServiceImpl(
   process.env.SURVEYS_TABLE || 'SurveyPlatform',
-  surveySchema,
+  surveySchema, // Esquema para encuestas
+  querySchema
+);
+
+const questionService = new DynamoServiceImpl(
+  process.env.SURVEYS_TABLE || 'SurveyPlatform',
+  questionSchema, // Esquema para preguntas
   querySchema
 );
 
@@ -158,9 +164,9 @@ export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatew
     };
 
     try {
-      await surveyService.put(question);
+      await questionService.put(question);
       return {
-        statusCode: 201,
+        statusCode: HTTP_STATUS.CREATED,
         body: JSON.stringify({
           message: "Question added successfully",
           questionId,
@@ -169,7 +175,7 @@ export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatew
     } catch (error) {
       console.error(error);
       return {
-        statusCode: error instanceof Joi.ValidationError ? 400 : 500,
+        statusCode: error instanceof Joi.ValidationError ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_ERROR,
         body: JSON.stringify({
           message: error instanceof Joi.ValidationError
             ? `Validation error: ${error.message}`
