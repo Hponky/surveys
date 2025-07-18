@@ -2,12 +2,14 @@
 
 service: survey-api
 
-frameworkVersion: '4.17.1' 
+frameworkVersion: '4.17.1'
 
 provider:
   name: aws
   runtime: nodejs22.x
   region: us-east-1
+  environment:
+    SURVEYS_TABLE: SurveyPlatform
   
   # Permisos para que Lambda acceda a DynamoDB
   iam:
@@ -17,7 +19,29 @@ provider:
           Action:
             - "dynamodb:PutItem"
             - "dynamodb:GetItem"
-          Resource: "arn:aws:dynamodb:us-east-1:407493720232:table/SurveyPlatform"
+            - "dynamodb:UpdateItem"
+            - "dynamodb:DeleteItem"
+            - "dynamodb:Query"
+          Resource:
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:provider.environment.SURVEYS_TABLE}"
+
+resources:
+  Resources:
+    SurveysTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: SurveyPlatform
+        AttributeDefinitions:
+          - AttributeName: "PK"
+            AttributeType: "S"
+          - AttributeName: "SK"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "PK"
+            KeyType: "HASH"
+          - AttributeName: "SK"
+            KeyType: "RANGE"
+        BillingMode: PAY_PER_REQUEST
 
 # Definición de nuestras funciones
 functions:
@@ -34,3 +58,10 @@ functions:
       - httpApi:
           path: /surveys/{surveyId}/questions
           method: post
+
+  getSurvey:
+    handler: src/functions/surveys.getSurvey # Apunta a la nueva función
+    events:
+      - httpApi:
+          path: /surveys/{surveyId} # El mismo path que el de arriba, pero con método GET
+          method: get

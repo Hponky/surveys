@@ -128,3 +128,5 @@ coverage/
 /playwright-report/
 /test-results/
 infra/.terraform.lock.hcl
+task-breakdown-202507162231-refactor-backend.md
+context_project.md

@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -13,14 +15,19 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.845.0",
     "@aws-sdk/lib-dynamodb": "^3.845.0",
+    "joi": "^17.13.3",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.12",
     "@types/node": "^24.0.14",
     "@types/uuid": "^10.0.0",
     "effect": "^3.16.13",
     "glob": "^11.0.3",
+    "jest": "^30.0.4",
     "lru-cache": "^11.1.0",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
 }
