@@ -1,11 +1,13 @@
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { randomUUID } from 'crypto';
+import { HTTP_STATUS } from '../../../../src/modules/surveys/utils/constants';
 
 // Mocks para los métodos de DynamoServiceImpl
 const mockPut = jest.fn();
 const mockQuery = jest.fn();
 const mockUpdate = jest.fn(); // Añadir si se planean tests para update
 const mockDelete = jest.fn(); // Añadir si se planean tests para delete
+const mockScan = jest.fn();
 
 // Mockear la clase DynamoServiceImpl ANTES de importar el módulo surveys
 jest.mock('@/shared/dynamo-service', () => {
@@ -16,6 +18,7 @@ jest.mock('@/shared/dynamo-service', () => {
         query: mockQuery,
         update: mockUpdate,
         delete: mockDelete,
+        scan: mockScan,
       };
     }),
   };
@@ -23,7 +26,7 @@ jest.mock('@/shared/dynamo-service', () => {
 
 // Importar las funciones de surveys DESPUÉS de que el mock esté configurado
 // Esto asegura que la instancia de DynamoServiceImpl dentro de surveys.ts sea la mockeada
-const { create, addQuestion, getSurvey, submitResponse } = require('@/modules/surveys/application/surveys');
+const { create, addQuestion, getSurvey, submitResponse, getAllSurveys } = require('@/modules/surveys/application/surveys');
 
 describe('Surveys API', () => {
   const mockTableName = 'SurveyPlatform';
@@ -263,6 +266,83 @@ describe('Surveys API', () => {
         answer: ['Option X', 'Option Y'],
         createdAt: expect.any(String)
       }));
+    });
+  });
+  
+  describe('getAllSurveys', () => {
+    const mockEvent = {} as any; // El evento no es relevante para getAllSurveys
+  
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+  
+    it('debería retornar una lista de encuestas con estado 200 si se encuentran encuestas', async () => {
+      const mockSurveys = [
+        { PK: 'SURVEY#1', SK: 'METADATA', title: 'Encuesta 1', createdAt: '2023-01-01T00:00:00Z', status: 'ACTIVE' },
+        { PK: 'SURVEY#2', SK: 'METADATA', title: 'Encuesta 2', createdAt: '2023-01-02T00:00:00Z', status: 'INACTIVE' },
+      ];
+  
+      (mockScan as jest.Mock).mockResolvedValue(mockSurveys); // Usar mockScan ya que surveyService.scan usa scan internamente
+  
+      const result = await getAllSurveys(mockEvent);
+  
+      expect(mockScan).toHaveBeenCalledWith({
+        TableName: process.env.SURVEYS_TABLE || 'SurveyPlatform',
+        FilterExpression: "SK = :sk",
+        ExpressionAttributeValues: {
+          ":sk": "METADATA",
+        },
+        ProjectionExpression: "PK, title, createdAt, #st",
+        ExpressionAttributeNames: {
+            "#st": "status"
+        }
+      });
+      expect(result.statusCode).toBe(HTTP_STATUS.OK);
+      expect(JSON.parse(result.body)).toEqual([
+        { surveyId: '1', title: 'Encuesta 1', createdAt: '2023-01-01T00:00:00Z', status: 'ACTIVE' },
+        { surveyId: '2', title: 'Encuesta 2', createdAt: '2023-01-02T00:00:00Z', status: 'INACTIVE' },
+      ]);
+    });
+  
+    it('debería retornar una lista vacía con estado 200 si no se encuentran encuestas', async () => {
+      (mockScan as jest.Mock).mockResolvedValue([]);
+  
+      const result = await getAllSurveys(mockEvent);
+  
+      expect(mockScan).toHaveBeenCalledWith({
+        TableName: process.env.SURVEYS_TABLE || 'SurveyPlatform',
+        FilterExpression: "SK = :sk",
+        ExpressionAttributeValues: {
+          ":sk": "METADATA",
+        },
+        ProjectionExpression: "PK, title, createdAt, #st",
+        ExpressionAttributeNames: {
+            "#st": "status"
+        }
+      });
+      expect(result.statusCode).toBe(HTTP_STATUS.OK);
+      expect(JSON.parse(result.body)).toEqual([]);
+    });
+  
+    it('debería retornar un error 500 si surveyService.scan falla', async () => {
+      const mockError = new Error('Error de DynamoDB');
+      (mockScan as jest.Mock).mockRejectedValue(mockError);
+  
+      const result = await getAllSurveys(mockEvent);
+  
+      expect(mockScan).toHaveBeenCalledWith({
+        TableName: process.env.SURVEYS_TABLE || 'SurveyPlatform',
+        FilterExpression: "SK = :sk",
+        ExpressionAttributeValues: {
+          ":sk": "METADATA",
+        },
+        ProjectionExpression: "PK, title, createdAt, #st",
+        ExpressionAttributeNames: {
+            "#st": "status"
+        }
+      });
+      expect(result.statusCode).toBe(HTTP_STATUS.INTERNAL_ERROR);
+      expect(JSON.parse(result.body)).toEqual({ message: "An error occurred while fetching the surveys." });
     });
   });
 });
