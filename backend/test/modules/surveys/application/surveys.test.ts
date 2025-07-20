@@ -53,6 +53,8 @@ describe('Surveys API', () => {
 
       expect(result.statusCode).toBe(201);
       expect(JSON.parse(result.body).message).toBe('Survey created successfully');
+      expect(JSON.parse(result.body)).toHaveProperty('id');
+      expect(JSON.parse(result.body).id).toMatch(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/); // Validar formato UUID
       expect(mockPut).toHaveBeenCalledWith(expect.objectContaining({
         PK: expect.stringContaining('SURVEY#'),
         SK: 'METADATA',
@@ -299,8 +301,8 @@ describe('Surveys API', () => {
       });
       expect(result.statusCode).toBe(HTTP_STATUS.OK);
       expect(JSON.parse(result.body)).toEqual([
-        { surveyId: '1', title: 'Encuesta 1', createdAt: '2023-01-01T00:00:00Z', status: 'ACTIVE' },
-        { surveyId: '2', title: 'Encuesta 2', createdAt: '2023-01-02T00:00:00Z', status: 'INACTIVE' },
+        { id: '1', title: 'Encuesta 1', createdAt: '2023-01-01T00:00:00Z', status: 'ACTIVE' },
+        { id: '2', title: 'Encuesta 2', createdAt: '2023-01-02T00:00:00Z', status: 'INACTIVE' },
       ]);
     });
   

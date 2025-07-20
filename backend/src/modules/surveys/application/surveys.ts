@@ -35,7 +35,7 @@ export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
       statusCode: 201,
       body: JSON.stringify({
         message: "Survey created successfully",
-        surveyId,
+        id: surveyId,
       }),
     };
   } catch (error) {
@@ -125,7 +125,7 @@ export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGat
     }
 
     const surveys = Items.map((item: any) => ({
-        surveyId: item.PK.replace("SURVEY#", ""),
+        id: item.PK.replace("SURVEY#", ""), // Cambiado de surveyId a id para consistencia con el frontend
         title: item.title,
         createdAt: item.createdAt,
         status: item.status

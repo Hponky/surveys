@@ -1,6 +1,6 @@
 // src/services/api.ts
 import { useFetch, type UseFetchOptions } from '@vueuse/core'
-import { ref } from 'vue';
+import { ref, computed, type Ref } from 'vue';
 
 interface QuestionData {
   text: string
@@ -19,22 +19,24 @@ export interface Survey {
   description: string;
   questions: QuestionData[];
   responses: ResponseData[];
+  createdAt: string; // Añadido para el dashboard
+  status: 'CREATED' | 'PUBLISHED' | 'CLOSED'; // Añadido para el dashboard
 }
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
 
 interface ApiFetchOptions extends UseFetchOptions {
   method?: HttpMethod
-  body?: BodyInit | null
+  body?: (() => BodyInit | null | undefined) | BodyInit | null | undefined
   headers?: HeadersInit
 }
 
-// ¡ACCIÓN CRÍTICA! Pega la URL base de tu API aquí
-const API_BASE_URL = 'https://x8f8ptgn7j.execute-api.us-east-1.amazonaws.com';
+export const API_BASE_URL = 'https://x8f8ptgn7j.execute-api.us-east-1.amazonaws.com';
 
 // Este es un "factory" para crear una instancia pre-configurada de useFetch.
 // Esto evita repetir la configuración en cada llamada.
 const createApiFetch = <T>(endpoint: string, options: ApiFetchOptions = {}) => {
+  console.log(`createApiFetch: Invocando para el endpoint: ${endpoint}`, options);
   const fullUrl = `${API_BASE_URL}${endpoint}`;
   
   return useFetch<T>(fullUrl, {
@@ -45,7 +47,7 @@ const createApiFetch = <T>(endpoint: string, options: ApiFetchOptions = {}) => {
       return ctx;
     },
     method: options.method || 'GET',
-    body: options.body,
+    body: typeof options.body === 'function' ? options.body() : options.body,
     headers: options.headers,
     ...options
   }).json<T>()
@@ -72,14 +74,15 @@ export function useSurveyApi() {
     description: string
   }
 
-  const createSurvey = (data: SurveyData) => {
+  const createSurvey = (surveyData: Ref<SurveyData | null>) => {
     return createApiFetch<Survey>('/surveys', {
       method: 'POST',
-      body: JSON.stringify(data),
       headers: {
         'Content-Type': 'application/json'
-      }
-    })
+      },
+      body: () => (surveyData.value ? JSON.stringify(surveyData.value) : null),
+      immediate: false
+    });
   }
   
   const addQuestion = (surveyId: string, questionData: QuestionData) => {
