@@ -2,11 +2,12 @@
 import { useFetch, type UseFetchOptions } from '@vueuse/core'
 import { ref, computed, type Ref } from 'vue';
 
-interface QuestionData {
-  text: string
-  type: string
-  options?: string[]
-  required?: boolean
+export interface Question {
+  questionId: string;
+  text: string;
+  type: 'MULTIPLE_CHOICE' | 'OPEN_TEXT';
+  options?: string[];
+  required?: boolean;
 }
 
 interface ResponseData {
@@ -17,7 +18,7 @@ export interface Survey {
   id: string;
   title: string;
   description: string;
-  questions: QuestionData[];
+  questions: Question[];
   responses: ResponseData[];
   createdAt: string; // Añadido para el dashboard
   status: 'CREATED' | 'PUBLISHED' | 'CLOSED'; // Añadido para el dashboard
@@ -85,7 +86,7 @@ export function useSurveyApi() {
     });
   }
   
-  const addQuestion = (surveyId: string, questionData: QuestionData) => {
+  const addQuestion = (surveyId: string, questionData: Question) => {
     return createApiFetch<Survey>(`/surveys/${surveyId}/questions`, {
       method: 'POST',
       body: JSON.stringify(questionData),

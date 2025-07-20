@@ -1,7 +1,7 @@
 <template>
   <div class="editor-container">
-    <h1 class="editor-title">Crear Nueva Encuesta</h1>
-    <p class="editor-subtitle">Define los detalles básicos de tu encuesta. Podrás añadir las preguntas en el siguiente paso.</p>
+    <h1 class="editor-title">{{ isEditing ? `Editar Encuesta: ${surveyTitle}` : 'Crear Nueva Encuesta' }}</h1>
+    <p class="editor-subtitle">{{ isEditing ? 'Modifica los detalles y gestiona las preguntas de tu encuesta.' : 'Define los detalles básicos de tu encuesta. Podrás añadir las preguntas en el siguiente paso.' }}</p>
 
     <SurveyForm
       :title="surveyTitle"
@@ -12,6 +12,10 @@
       @update:description="surveyDescription = $event"
       @submit="handleCreateSurvey"
     />
+
+    <div v-if="isEditing" class="questions-section">
+      <QuestionList :questions="questions" />
+    </div>
   </div>
 </template>
 
@@ -19,16 +23,19 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import SurveyForm from '@/components/SurveyForm.vue';
+import QuestionList from '@/components/QuestionList.vue';
 import { useSurveyApi } from '@/services/api';
+import type { Question } from '@/services/api';
 
 const router = useRouter();
 
 const surveyTitle = ref('');
 const surveyDescription = ref('');
+const questions = ref<Question[]>([]);
 
-const props = defineProps<{
-  id?: string;
-}>();
+const props = defineProps<{ id?: string }>();
+
+const isEditing = computed(() => props.id && props.id !== 'new');
 
 // Objeto reactivo para los datos de la encuesta que se enviarán a la API
 const surveyData = computed(() => ({
@@ -56,9 +63,11 @@ watch(loadedSurvey, (newSurvey) => {
   if (newSurvey) {
     surveyTitle.value = newSurvey.title;
     surveyDescription.value = newSurvey.description;
+    questions.value = newSurvey.questions || [];
   } else if (props.id === 'new' || !props.id) {
     surveyTitle.value = '';
     surveyDescription.value = '';
+    questions.value = [];
   }
 });
 
