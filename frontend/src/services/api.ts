@@ -1,6 +1,7 @@
 // src/services/api.ts
-import { useFetch, type UseFetchOptions } from '@vueuse/core'
-import { ref, computed, type Ref } from 'vue';
+import { useFetch, type UseFetchOptions, type UseFetchReturn } from '@vueuse/core'
+import { ref, computed, unref, type Ref, type ComputedRef } from 'vue';
+import type { UnwrapRef } from '@vue/reactivity';
 
 export interface Question {
   questionId: string;
@@ -10,7 +11,14 @@ export interface Question {
   required?: boolean;
 }
 
-interface ResponseData {
+export interface QuestionPayload {
+  text: string;
+  type: 'MULTIPLE_CHOICE' | 'OPEN_TEXT';
+  options?: string[];
+  required?: boolean;
+}
+
+export interface ResponseData {
   answers: Record<string, string | string[]>
 }
 
@@ -24,50 +32,106 @@ export interface Survey {
   status: 'CREATED' | 'PUBLISHED' | 'CLOSED'; // Añadido para el dashboard
 }
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
 
-interface ApiFetchOptions extends UseFetchOptions {
-  method?: HttpMethod
-  body?: (() => BodyInit | null | undefined) | BodyInit | null | undefined
-  headers?: HeadersInit
+export interface ApiFetchOptions extends UseFetchOptions {
+  body?: (() => BodyInit | null | undefined) | BodyInit | null | undefined;
+  headers?: HeadersInit;
 }
+
+interface ResponseContext {
+  response: Response;
+}
+
+export interface ApiFetchExtension {
+  options: {
+    headers?: HeadersInit;
+  };
+  responseHeaders: Ref<Headers | undefined>;
+  onResponse: (handler: (ctx: ResponseContext) => void) => void;
+}
+
+export type EnhancedUseFetchReturn<T> = UseFetchReturn<T> & ApiFetchExtension;
 
 export const API_BASE_URL = 'https://x8f8ptgn7j.execute-api.us-east-1.amazonaws.com';
 
-// Este es un "factory" para crear una instancia pre-configurada de useFetch.
-// Esto evita repetir la configuración en cada llamada.
-const createApiFetch = <T>(endpoint: string, options: ApiFetchOptions = {}) => {
-  console.log(`createApiFetch: Invocando para el endpoint: ${endpoint}`, options);
-  const fullUrl = `${API_BASE_URL}${endpoint}`;
-  
-  return useFetch<T>(fullUrl, {
+// Factory para crear instancias pre-configuradas de useFetch
+const createApiFetch = <T>(
+  endpoint: string | Ref<string> | ComputedRef<string>,
+  method: HttpMethod,
+  options: Omit<ApiFetchOptions, 'method'> = {}
+): EnhancedUseFetchReturn<T> => {
+  const url = computed(() => `${API_BASE_URL}${unref(endpoint)}`);
+
+  const fetchOptions: UseFetchOptions = {
     async afterFetch(ctx) {
+      console.debug('[API] Request details:', {
+        url: ctx.response.url,
+        status: ctx.response.status,
+        method,
+        headers: options.headers,
+        body: typeof options.body === 'function' ? options.body() : options.body
+      });
+
       if (!ctx.response.ok) {
-        throw new Error(`HTTP error ${ctx.response.status}: ${ctx.response.statusText}`);
+        const errorData = await ctx.response.json().catch(() => ({}));
+        throw new Error(
+          JSON.stringify({
+            status: ctx.response.status,
+            statusText: ctx.response.statusText,
+            url: ctx.response.url,
+            ...(errorData.message ? { message: errorData.message } : {}),
+            ...(errorData.errors ? { errors: errorData.errors } : {})
+          })
+        );
       }
       return ctx;
     },
-    method: options.method || 'GET',
     body: typeof options.body === 'function' ? options.body() : options.body,
-    headers: options.headers,
-    ...options
-  }).json<T>()
-}
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options,
+  };
 
-// --- Definimos nuestro composable principal para la API de Encuestas ---
+  let fetchInstance: UseFetchReturn<T>;
 
-export function useSurveyApi() {
-  // OBTENER todas las encuestas (lo necesitaremos para el dashboard)
-  // Nota: Aún no hemos creado este endpoint en el backend. Lo haremos después.
-  const getAllSurveys = () => {
-    // immediate: false significa que la petición no se lanzará hasta que llamemos al método .execute()
-    return createApiFetch<Survey[]>(`/surveys`, { immediate: false });
+  switch (method) {
+    case 'POST': fetchInstance = useFetch<T>(url, fetchOptions).post(); break;
+    case 'PUT': fetchInstance = useFetch<T>(url, fetchOptions).put(); break;
+    case 'DELETE': fetchInstance = useFetch<T>(url, fetchOptions).delete(); break;
+    case 'PATCH': fetchInstance = useFetch<T>(url, fetchOptions).patch(); break;
+    case 'GET':
+    default: fetchInstance = useFetch<T>(url, fetchOptions).get(); break;
   }
 
-  // OBTENER una encuesta específica por su ID
-  const getSurvey = (surveyId: string) => {
-    // En este caso, la petición se lanza inmediatamente al llamar a getSurvey(id).
-    return createApiFetch<Survey>(`/surveys/${surveyId}`);
+  const extension: ApiFetchExtension = {
+    options: {
+      headers: options.headers
+    },
+    responseHeaders: ref<Headers>(),
+    onResponse: (handler) => {
+      fetchInstance.onFetchResponse((response) => {
+        extension.responseHeaders.value = response.headers;
+        handler({ response });
+      });
+    }
+  };
+
+  return Object.assign(fetchInstance.json<T>(), extension);
+}
+
+// Única implementación de useSurveyApi
+export function useSurveyApi() {
+  // Obtener todas las encuestas (para dashboard)
+  const getAllSurveys = () => {
+    return createApiFetch<Survey[]>(`/surveys`, 'GET', { immediate: false });
+  }
+
+  // Obtener encuesta específica por ID
+  const getSurvey = (surveyId: Ref<string> | ComputedRef<string>) => {
+    return createApiFetch<Survey>(computed(() => `/surveys/${unref(surveyId)}`), 'GET', { immediate: false });
   }
 
   interface SurveyData {
@@ -76,8 +140,7 @@ export function useSurveyApi() {
   }
 
   const createSurvey = (surveyData: Ref<SurveyData | null>) => {
-    return createApiFetch<Survey>('/surveys', {
-      method: 'POST',
+    return createApiFetch<Survey>('/surveys', 'POST', {
       headers: {
         'Content-Type': 'application/json'
       },
@@ -85,32 +148,32 @@ export function useSurveyApi() {
       immediate: false
     });
   }
-  
-  const addQuestion = (surveyId: string, questionData: Question) => {
-    return createApiFetch<Survey>(`/surveys/${surveyId}/questions`, {
-      method: 'POST',
+
+  const addQuestion = (surveyId: Ref<string> | ComputedRef<string>, questionData: QuestionPayload) => {
+    return createApiFetch<Question>(computed(() => `/surveys/${unref(surveyId)}/questions`), 'POST', {
       body: JSON.stringify(questionData),
       headers: {
         'Content-Type': 'application/json'
-      }
-    })
-  }
-  
-  const submitResponse = (surveyId: string, responseData: ResponseData) => {
-    return createApiFetch<any>(`/surveys/${surveyId}/responses`, { // Tipo 'any' temporalmente
-      method: 'POST',
-      body: JSON.stringify(responseData),
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      },
+      immediate: false
     })
   }
 
-  return { 
+  const submitResponse = (surveyId: string, responseData: ResponseData) => {
+    return createApiFetch<any>(`/surveys/${surveyId}/responses`, 'POST', {
+      body: JSON.stringify(responseData),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      immediate: false
+    })
+  }
+
+  return {
     getAllSurveys,
-    getSurvey, 
-    createSurvey, 
-    addQuestion, 
-    submitResponse 
+    getSurvey,
+    createSurvey,
+    addQuestion,
+    submitResponse
   };
 }

@@ -15,6 +15,8 @@
 
     <div v-if="isEditing" class="questions-section">
       <QuestionList :questions="questions" />
+      <div v-if="questionErrorMessage" class="error-message">{{ questionErrorMessage }}</div>
+      <AddQuestionForm :is-submitting="isSubmittingQuestion" @add-question="handleAddQuestion" />
     </div>
   </div>
 </template>
@@ -24,6 +26,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import SurveyForm from '@/components/SurveyForm.vue';
 import QuestionList from '@/components/QuestionList.vue';
+import AddQuestionForm from '@/components/AddQuestionForm.vue';
 import { useSurveyApi } from '@/services/api';
 import type { Question } from '@/services/api';
 
@@ -32,6 +35,7 @@ const router = useRouter();
 const surveyTitle = ref('');
 const surveyDescription = ref('');
 const questions = ref<Question[]>([]);
+const isSubmittingQuestion = ref(false);
 
 const props = defineProps<{ id?: string }>();
 
@@ -57,7 +61,7 @@ const apiErrorMessage = computed(() => {
 });
 
 // Función para cargar los datos de la encuesta existente
-const { data: loadedSurvey, execute: fetchSurveyById } = useSurveyApi().getSurvey(computed(() => props.id || '').value);
+const { data: loadedSurvey, execute: fetchSurveyById } = useSurveyApi().getSurvey(computed(() => props.id || ''));
 
 watch(loadedSurvey, (newSurvey) => {
   if (newSurvey) {
@@ -95,6 +99,87 @@ const handleCreateSurvey = async () => {
 
   if (createdSurvey.value?.id) {
     router.push({ name: 'survey-edit', params: { id: createdSurvey.value.id } });
+  }
+};
+
+// Definimos un tipo local para los datos de la pregunta que vienen del formulario
+interface AddQuestionFormData {
+  text: string;
+  type: 'OPEN_TEXT' | 'MULTIPLE_CHOICE';
+  options?: string[];
+}
+
+const questionErrorMessage = ref<string | null>(null);
+
+const handleAddQuestion = async (questionData: AddQuestionFormData) => {
+  if (!props.id) {
+    questionErrorMessage.value = 'Error: No se puede añadir una pregunta a una encuesta no guardada.';
+    return;
+  }
+
+  isSubmittingQuestion.value = true;
+  questionErrorMessage.value = null;
+
+  try {
+    console.debug('[SurveyEditor] Iniciando llamada para añadir pregunta:', {
+      surveyId: props.id,
+      questionData,
+      timestamp: new Date().toISOString()
+    });
+
+    const apiCall = useSurveyApi().addQuestion(computed(() => props.id || ''), questionData);
+    
+    console.debug('[SurveyEditor] Configuración de la llamada API:', {
+      method: 'POST',
+      endpoint: `/surveys/${props.id}/questions`,
+      headers: apiCall.options?.headers,
+      body: JSON.stringify(questionData)
+    });
+
+    await apiCall.execute();
+
+    console.debug('[SurveyEditor] Respuesta completa de la API:', {
+      status: apiCall.statusCode.value,
+      data: apiCall.data.value,
+      error: apiCall.error.value,
+      headers: apiCall.responseHeaders.value
+    });
+
+    if (apiCall.error.value) {
+      const errorMsg = apiCall.error.value.response?.data?.message
+        || apiCall.error.value.message
+        || 'Error desconocido al añadir pregunta';
+      questionErrorMessage.value = `Error: ${errorMsg}`;
+      console.error('[SurveyEditor] Error detallado al añadir pregunta:', {
+        error: apiCall.error.value,
+        request: {
+          url: `/surveys/${props.id}/questions`,
+          method: 'POST',
+          payload: questionData
+        },
+        response: apiCall.error.value.response?.data
+      });
+      return;
+    }
+
+    // Actualizar lista de preguntas mediante recarga desde servidor
+    await fetchSurveyById();
+    console.debug('[SurveyEditor] Pregunta añadida exitosamente. Recargando encuesta...');
+    
+  } catch (e: any) {
+    const errorMsg = e.response?.data?.message || e.message || 'Error inesperado';
+    questionErrorMessage.value = `Error: ${errorMsg}`;
+    console.error('[SurveyEditor] Error no manejado al añadir pregunta:', {
+      error: e,
+      stack: e.stack,
+      requestInfo: {
+        surveyId: props.id,
+        questionData
+      }
+    });
+  } finally {
+    isSubmittingQuestion.value = false;
+    console.debug('[SurveyEditor] Finalizado proceso de añadir pregunta');
   }
 };
 </script>
