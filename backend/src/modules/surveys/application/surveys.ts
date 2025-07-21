@@ -1,17 +1,72 @@
+import middy from '@middy/core';
+import httpJsonBodyParser from '@middy/http-json-body-parser';
+import httpErrorHandler from '@middy/http-error-handler';
+import validator from '@middy/validator';
 import Joi from 'joi';
 import { randomUUID } from "crypto";
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
+
+/**
+ * Obtiene el método HTTP de un evento API Gateway V2
+ * @param event El evento de API Gateway
+ * @returns El método HTTP en mayúsculas o cadena vacía si no está definido
+ */
+const getHttpMethod = (event: APIGatewayProxyEventV2): string =>
+  event.requestContext?.http?.method?.toUpperCase() || '';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Credentials': true,
+  'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PUT,DELETE',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+};
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  'Content-Security-Policy': "default-src 'self'",
+  'Referrer-Policy': 'no-referrer'
+};
+
+const RESPONSE_HEADERS = {
+  ...CORS_HEADERS,
+  ...SECURITY_HEADERS
+};
+
+const handleOptions = (): APIGatewayProxyResult => ({
+  statusCode: 204,
+  headers: CORS_HEADERS,
+  body: ''
+});
 import { Survey, Question, SurveyResponse, Answer, ResponseInput } from '../domain/interfaces';
 import { pathParamsSchema, createSurveySchema, questionInputSchema, submitResponseSchema } from '../infrastructure/schemas';
 import { HTTP_STATUS } from '../utils/constants';
 import { surveyService, questionService, answerService } from '../infrastructure/services';
 
-export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+interface CreateSurveyBody {
+  title: string;
+  description?: string;
+}
+
+const createHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+  if (getHttpMethod(event) === 'OPTIONS') return handleOptions();
+  
+  let body: CreateSurveyBody;
   try {
-    const { title, description } = await createSurveySchema.validateAsync(
-      JSON.parse(event.body || '{}')
-    );
-    const surveyId = randomUUID();
+    body = JSON.parse(event.body || '') as CreateSurveyBody;
+    if (!body.title) throw new Error('Title is required');
+  } catch (error) {
+    return {
+      statusCode: HTTP_STATUS.BAD_REQUEST,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: 'Invalid request body' })
+    };
+  }
+  
+  const { title, description = '' } = body;
+  const surveyId = randomUUID();
 
   const survey: Survey = {
     PK: `SURVEY#${surveyId}`,
@@ -22,42 +77,38 @@ export const create = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     createdAt: new Date().toISOString()
   };
 
-    await surveyService.put({
-      PK: `SURVEY#${surveyId}`,
-      SK: 'METADATA',
-      title,
-      description,
-      status: 'CREATED',
-      createdAt: new Date().toISOString()
-    });
-    
-    return {
-      statusCode: 201,
-      body: JSON.stringify({
-        message: "Survey created successfully",
-        id: surveyId,
-      }),
-    };
-  } catch (error) {
-    console.error(error);
-    return {
-      statusCode: error instanceof Joi.ValidationError ? 400 : 500,
-      body: JSON.stringify({
-        message: error instanceof Joi.ValidationError
-          ? `Validation error: ${error.message}`
-          : "Error creating survey"
-      }),
-    };
-  }
+  await surveyService.put(survey);
+  
+  return {
+    statusCode: 201,
+    headers: RESPONSE_HEADERS,
+    body: JSON.stringify({
+      message: "Survey created successfully",
+      id: surveyId,
+    }),
+  };
 };
 
+export const create = middy(createHandler)
+  .use(httpJsonBodyParser())
+  .use(validator({ eventSchema: createSurveySchema }))
+  .use(httpErrorHandler());
 
-export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+
+type QuestionType = 'FREE_TEXT' | 'MULTIPLE_CHOICE';
+
+interface AddQuestionBody {
+  text: string;
+  type: QuestionType;
+  options?: string[];
+}
+
+const addQuestionHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+  if (getHttpMethod(event) === 'OPTIONS') return handleOptions();
+  
   try {
-    const { surveyId } = await pathParamsSchema.validateAsync(event.pathParameters || {});
-    const { text, type, options } = await questionInputSchema.validateAsync(
-      JSON.parse(event.body || '{}')
-    );
+    const { surveyId } = event.pathParameters as { surveyId: string };
+    const { text, type, options } = event.body as unknown as AddQuestionBody;
     const questionId = randomUUID();
 
     const question: Question = {
@@ -68,40 +119,34 @@ export const addQuestion = async (event: APIGatewayProxyEvent): Promise<APIGatew
       ...(options && { options })
     };
 
-    try {
-      await questionService.put(question);
-      return {
-        statusCode: HTTP_STATUS.CREATED,
-        body: JSON.stringify({
-          message: "Question added successfully",
-          questionId,
-        }),
-      };
-    } catch (error) {
-      console.error(error);
-      return {
-        statusCode: error instanceof Joi.ValidationError ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_ERROR,
-        body: JSON.stringify({
-          message: error instanceof Joi.ValidationError
-            ? `Validation error: ${error.message}`
-            : "Error adding question"
-        }),
-      };
-    }
-  } catch (error) {
-    console.error(error);
+    await questionService.put(question);
+    
     return {
-      statusCode: HTTP_STATUS.BAD_REQUEST,
+      statusCode: HTTP_STATUS.CREATED,
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({
-        message: error instanceof Joi.ValidationError
-          ? `Validation error: ${error.message}`
-          : "Error processing request"
+        message: "Question added successfully",
+        questionId,
       }),
     };
+  } catch (error) {
+    console.error(error);
+    throw error; // El middleware httpErrorHandler manejará el error
   }
 };
 
-export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+export const addQuestion = middy(addQuestionHandler)
+  .use(httpJsonBodyParser())
+  .use(validator({
+    eventSchema: Joi.object({
+      pathParameters: pathParamsSchema,
+      body: questionInputSchema
+    })
+  }))
+  .use(httpErrorHandler());
+
+export const getAllSurveys = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+  if (getHttpMethod(event) === 'OPTIONS') return handleOptions();
   try {
     const scanParams = {
       TableName: process.env.SURVEYS_TABLE || 'SurveyPlatform',
@@ -120,6 +165,7 @@ export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGat
     if (!Items || Items.length === 0) {
         return {
             statusCode: HTTP_STATUS.OK,
+            headers: RESPONSE_HEADERS,
             body: JSON.stringify([])
         };
     }
@@ -133,6 +179,7 @@ export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGat
 
     return {
       statusCode: HTTP_STATUS.OK,
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify(surveys),
     };
 
@@ -141,12 +188,14 @@ export const getAllSurveys = async (event: APIGatewayProxyEvent): Promise<APIGat
 
     return {
       statusCode: HTTP_STATUS.INTERNAL_ERROR,
+      headers: RESPONSE_HEADERS,
       body: JSON.stringify({ message: "An error occurred while fetching the surveys." }),
     };
   }
 };
 
-export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+export const getSurvey = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+  if (getHttpMethod(event) === 'OPTIONS') return handleOptions();
   const { pathParameters } = event;
 
   try {
@@ -164,6 +213,7 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
     if (!result || result.length === 0) {
       return {
         statusCode: HTTP_STATUS.NOT_FOUND,
+        headers: RESPONSE_HEADERS,
         body: JSON.stringify({ message: "Survey not found" }),
       };
     }
@@ -187,6 +237,7 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
 
     return {
       statusCode: HTTP_STATUS.OK,
+      headers: CORS_HEADERS,
       body: JSON.stringify(response),
     };
   } catch (err) {
@@ -194,6 +245,7 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
     if (err instanceof Joi.ValidationError) {
       return {
         statusCode: HTTP_STATUS.BAD_REQUEST,
+        headers: CORS_HEADERS,
         body: JSON.stringify({
           message: `Validation error: ${err.message}`
         }),
@@ -204,6 +256,7 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
     const error = err as Error & { statusCode?: number };
     return {
       statusCode: error.statusCode || HTTP_STATUS.INTERNAL_ERROR,
+      headers: CORS_HEADERS,
       body: JSON.stringify({
         message: error.message || "Error fetching survey"
       }),
@@ -211,15 +264,14 @@ export const getSurvey = async (event: APIGatewayProxyEvent): Promise<APIGateway
   }
 };
 
-export const submitResponse = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+export const submitResponse = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+  if (getHttpMethod(event) === 'OPTIONS') return handleOptions();
   try {
     // 1. Validar el surveyId de la URL
     const { surveyId } = await pathParamsSchema.validateAsync(event.pathParameters || {});
     
     // 2. Validar el cuerpo de la petición
-    const { responses } = await submitResponseSchema.validateAsync(
-      JSON.parse(event.body || '{}')
-    );
+    const { responses } = await submitResponseSchema.validateAsync(event.body);
 
     const responseId = randomUUID();
     const createdAt = new Date().toISOString();
@@ -241,6 +293,7 @@ export const submitResponse = async (event: APIGatewayProxyEvent): Promise<APIGa
 
     return {
       statusCode: HTTP_STATUS.CREATED,
+      headers: CORS_HEADERS,
       body: JSON.stringify({
         message: "Response submitted successfully",
         responseId,
@@ -251,6 +304,7 @@ export const submitResponse = async (event: APIGatewayProxyEvent): Promise<APIGa
     console.error(error);
     return {
       statusCode: error instanceof Joi.ValidationError ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_ERROR,
+      headers: CORS_HEADERS,
       body: JSON.stringify({
         message: error instanceof Joi.ValidationError
           ? `Validation error: ${error.message}`

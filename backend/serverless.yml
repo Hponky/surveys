@@ -25,6 +25,22 @@ provider:
             - "dynamodb:Scan"
           Resource:
             - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:provider.environment.SURVEYS_TABLE}"
+  httpApi:
+    payload: '2.0'
+    cors:
+      allowedOrigins:
+        - "*"
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - X-Amz-Date
+        - X-Api-Key
+        - X-Amz-Security-Token
+      allowedMethods:
+        - OPTIONS
+        - GET
+        - POST
+      allowCredentials: false
 
 resources:
   Resources:
@@ -52,6 +68,9 @@ functions:
       - httpApi:
           path: /surveys
           method: post
+      - httpApi:
+          path: /surveys
+          method: options
 
   addQuestion:
     handler: src/modules/surveys/application/surveys.addQuestion
@@ -59,6 +78,12 @@ functions:
       - httpApi:
           path: /surveys/{surveyId}/questions
           method: post
+          request:
+            body:
+              required: true
+      - httpApi:
+          path: /surveys/{surveyId}/questions
+          method: options
 
   getAllSurveys:
     handler: src/modules/surveys/application/surveys.getAllSurveys
@@ -80,3 +105,9 @@ functions:
       - httpApi:
           path: /surveys/{surveyId}/responses
           method: post
+          request:
+            body:
+              required: true
+      - httpApi:
+          path: /surveys/{surveyId}/responses
+          method: options
